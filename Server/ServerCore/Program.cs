@@ -7,46 +7,40 @@ namespace ServerCore
     internal class Program
     {
 
-        // 디버그모드에서는 정상작동 하지만
-        // 릴리스모드에서는 컴파일러가 코드최적화를 하는 과정에서 동작이 달라짐 (volatile을 사용하지 않았을 경우)
-        volatile static private bool _stop = false;
-        static private void ThreadMain()
-        {
-            Console.WriteLine("쓰레드 시작");
-
-            // 디스어셈블리를 들여다보면 
-            // 컴파일러가 컴파일을할 때 최적화하기 위해서 
-            // 
-            // if (_stop == false)
-            // while (true) {} 
-            // 
-            // 형태로 컴파일을 하는데, 멀티쓰레딩으로 외부 스레드에서 while 조건을 변경하고싶은 경우 
-            // 이런 최적화는 오작동을 일으킴. 
-            // 이럴때 사용할 수 있는조건이 volatile 키워드.
-            // volatile 키워드는 최적화를 하지 않도록하는 키워드
-            // C#의 volatile은 C++ 의 volatile 과 의미가 달라서 사용하지 않는것을 권함. 
-            // 그래서 lock 등으로 해결함
-            while (_stop == false)
-            {
-
-            }
-
-            Console.WriteLine("쓰레드 종료");
-        }
-
         static void Main(string[] args)
         {
-            Task t = new Task(ThreadMain);
+            // 캐시메모리 공간지역성 테스트
+            // [][][][][] [][][][][] [][][][][] [][][][][]
 
-            t.Start();
-            Thread.Sleep(1000);
-            _stop = true;
+            // 2차원 배열
+            int[,] arr = new int[10000, 10000];
 
+            // 메모리 접근 순서
+            // [1][2][3][4][5] [][][][][] [][][][][] [][][][][]
+            {
+                long now = DateTime.Now.Ticks;
+                for (int y = 0; y < 10000; y++)
+                    for (int x = 0; x < 10000; x++)
+                        arr[y, x] = 1;
+                long end = DateTime.Now.Ticks;
+                Console.WriteLine($"(y, x) 순서 걸린 시간 {end - now}");
+            }
 
-            Console.WriteLine("Stop 호출");
-            Console.WriteLine("종료 대기중");
-            t.Wait();
-            Console.WriteLine("종료 성공");
+            // 이 로직이 2배 이상 더 오래걸린다. 
+            // 
+            // 메모리 접근 순서
+            // [1][][][][] [2][][][][] [3][][][][] [4][][][][]
+            {
+                long now = DateTime.Now.Ticks;
+                for (int y = 0; y < 10000; y++)
+                    for (int x = 0; x < 10000; x++)
+                        arr[x, y] = 1;
+                long end = DateTime.Now.Ticks;
+                Console.WriteLine($"(y, x) 순서 걸린 시간 {end - now}");
+            }
+
+            // 단순히 2차원 배열정도에서도 캐시메모리 접근에 따라 속도가 아주많이 차이남. 
+            // 멀티쓰레드에서도 캐시메모리 접근문제를 고려해야함.
         }
     }
 }
