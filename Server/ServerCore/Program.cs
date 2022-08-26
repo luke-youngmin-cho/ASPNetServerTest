@@ -2,96 +2,55 @@
 using System.Threading;
 using System.Threading.Tasks;
 
+// Race Condition Test
 namespace ServerCore
 {
     internal class Program
-    {
-        static int x = 0;
-        static int y = 0;
-        static int r1 = 0;
-        static int r2 = 0;
+    {   
+        static int number = 0;
 
-
-
-        // 컴파일시
-        // 변수들이 연관이 없다면 
-        // 아래처럼 순서를 바꿔서 실행해 버릴 수 있음.
-        // 그래서 원래라면 Main 함수의 While 문을 빠져나올수 없어야하지만 빠져나올수 있게됨.
-        // 이렇게 컴파일러가 실행 순서를 바꿔버리는것을 막기위해서 
-        // 메모리 배리어를 쓸 수 있음.
-        //static void Thread_2()
-        //{
-        //    x = 1;
-        //    r2 = y;
-        //}
-        // to ->
-        //static void Thread_2()
-        //{
-        //    r2 = y;
-        //    x = 1;
-        //}
-
-        // 메모리배리어
-        // A. 코드 재배치 억제
-        // B. 가시성
-
-        // 1. Full Memory Barrier (ASM MFENCE, C# Thread.MemoryBarrier) : Store/Load 둘 다 막는다.
-        // 2. Store Memory Barreir (ASM SFENCE) : Store만 막는다
-        // 3. Load Memory Barrier (ASM LFENCE) : Load만 막는다.
         static void Thread_1()
         {
-            y = 1;
-            Thread.MemoryBarrier();
-            r1 = x;
-            Thread.MemoryBarrier();
+            //for (int i = 0; i < 10000; i++)
+            //    number++;
+
+            // 어셈블리로 변환될떄 실제과정은
+            // 세단계로 덧셈이 이루어짐. 
+            for (int i = 0; i < 10000; i++)
+            {
+                /*   
+                int temp = number;
+                temp += 1; // <- 여기까지 실행하고 중간에 멈추는 일이 생기면 아이템은 획득했는데 유저 템창에 뜨지않는 등의 버그가 생길 수 있음.
+                // 그래서 특히 멀티스레딩에서는 원자성 보장이 중요함 (쪼개질수 없는 단위의 연산)                
+                number = temp; // <- Thread_2 에서 number 연산 중일때 쓰게되면 해당 연산이 무시될 수 있음. (Race condition)
+                */
+
+                // 원자성 보장 동작을 하고 싶으면 Interlock 을 사용할 수 있음. 
+                Interlocked.Increment(ref number);
+            }
         }
 
         static void Thread_2()
         {
-            x = 1;
-            Thread.MemoryBarrier();
-            r2 = y;
-            Thread.MemoryBarrier();
-        }
-        
-        static void Thread_3()
-        {
-            Thread.MemoryBarrier();
-            if (r1 == 0)
-            {
-                Thread.MemoryBarrier();
-                Console.WriteLine($"r1 is 0");
-            }
-            else
-            {
-                Thread.MemoryBarrier();
-                Console.WriteLine($"r1 is not 0");
-            }
-        }
+            //for (int i = 0; i < 10000; i++)
+            //    number--;
 
+            for (int i = 0; i < 10000; i++)
+            {
+                int temp = number;
+                temp -= 1;
+                number = temp;
+            }
+        }
         static void Main(string[] args)
         {
-            int count = 0;
-            while (true)
-            {
-                count++;
-                x = y = r1 = r2 = 0;
+            Task t1 = new Task(Thread_1);
+            Task t2 = new Task(Thread_2);
+            t1.Start();
+            t2.Start();
 
-                Task t1 = new Task(Thread_1);
-                Task t2 = new Task(Thread_2);
-                Task t3 = new Task(Thread_3);
-                t1.Start();
-                t2.Start();
-                t3.Start();
-
-                Task.WaitAll(t1, t2);
-
-                if (r1 == 0 &&
-                    r2 == 0)
-                    break;
-            }
-
-            Console.WriteLine($"{count}번 만에 빠져나옴");
+            Task.WaitAll(t1, t2);
+            Console.WriteLine(number);
         }
     }
 }
