@@ -1,4 +1,7 @@
 ﻿using System;
+using System.Net;
+using System.Net.Sockets;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -6,31 +9,47 @@ namespace ServerCore
 {
     internal class Program
     {
-        // TLS ( Thread Local Storage )
-        // 쓰레드들이 하나의 Lock 에 몰려서 연산이 지연되는 문제를 해결하기위해 
-        // 쓰레드들을 일정량 묶어서 스택영역에 가져와서 분배 처리 하는 방법
-        // MMORPG 같은경우에 많은 클라이언트가 게임로직에 대한 자원에 전부 접근하기떄문에 
-        // TLS 가 해결방법으로 중요하게 사용된다.
-        static ThreadLocal<string> ThreadLocal = new ThreadLocal<string>(() =>
-        { 
-            return $"My name is {Thread.CurrentThread.ManagedThreadId}";
-        });
-        static void WhoAmI()
-        {
-            bool repeat = ThreadLocal.IsValueCreated;
-            if (repeat)
-                Console.WriteLine(ThreadLocal.Value + "{repeat}");
-            else
-                Console.WriteLine(ThreadLocal.Value);
-        }
         static void Main(string[] args)
         {
-            ThreadPool.SetMinThreads(1, 1);
-            ThreadPool.SetMaxThreads(3, 3);
-            // 인자로 넘겨준 함수를 스레드풀에서 가져온 각 스레드에 할당해서 호출해주는 함수
-            Parallel.Invoke(WhoAmI, WhoAmI, WhoAmI, WhoAmI, WhoAmI);
+            // DNS (Domain Name System)
+            // www.luke.com -> 123.123.123.2 
+            string host = Dns.GetHostName();
+            IPHostEntry ipHost = Dns.GetHostEntry(host);
+            IPAddress ipAddress = ipHost.AddressList[0];
+            IPEndPoint endPoint = new IPEndPoint(ipAddress, 7777); // 말단 IP 
 
-            ThreadLocal.Dispose();
+            Socket listenSocket = new Socket(endPoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
+
+            try
+            {
+                listenSocket.Bind(endPoint); // 소켓이 말단 IP 와 통신가능하도록 함
+
+                listenSocket.Listen(10); // backlog : 최대 대기수
+
+                while (true)
+                {
+                    Console.WriteLine("Listening...");
+                    Socket clientSocket = listenSocket.Accept(); // 통신 연결한 클라이언트 소켓 반환
+
+                    // 수신
+                    byte[] recieveBuffer = new byte[1024];
+                    int recievedBytes = clientSocket.Receive(recieveBuffer);
+                    string recievedData = Encoding.UTF8.GetString(recieveBuffer, 0, recievedBytes);
+                    Console.WriteLine($"[From Client] {recievedData}");
+
+                    // 송신
+                    byte[] sendBuffer = Encoding.UTF8.GetBytes("Welcome to server!");
+                    clientSocket.Send(sendBuffer);
+
+                    // 클라이언트 내보내기
+                    clientSocket.Shutdown(SocketShutdown.Both);
+                    clientSocket.Close();
+                }
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine(e.ToString());
+            }            
         }
     }
 }
