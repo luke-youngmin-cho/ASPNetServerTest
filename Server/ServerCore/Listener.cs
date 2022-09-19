@@ -9,14 +9,14 @@ using System.Text;
 
 namespace ServerCore
 {
-    internal class Listener
+    public class Listener
     {
         Socket _listenSocket;
-        Action<Socket> _onAcceptHandler;
-        public void Init(IPEndPoint endPoint, Action<Socket> onAcceptHandler)
+        Func<Session> _sessionFactory;
+        public void Init(IPEndPoint endPoint, Func<Session> sessionFactory)
         {
             _listenSocket = new Socket(endPoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
-            _onAcceptHandler += onAcceptHandler;
+            _sessionFactory += sessionFactory;
 
             _listenSocket.Bind(endPoint); // 소켓이 말단 IP 와 통신가능하도록 함
 
@@ -43,7 +43,9 @@ namespace ServerCore
         {
             if (args.SocketError == SocketError.Success)
             {
-                _onAcceptHandler.Invoke(args.AcceptSocket);
+                Session session = _sessionFactory.Invoke();
+                session.Start(args.AcceptSocket);
+                session.OnConnected(args.AcceptSocket.RemoteEndPoint);
             }
             else
             {
