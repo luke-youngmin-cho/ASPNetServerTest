@@ -7,6 +7,39 @@ using System.Threading;
 
 namespace ServerCore
 {
+
+    public abstract class PacketSession : Session
+    {
+        public static readonly int HeaderSize = 2;
+
+        public sealed override int OnReceive(ArraySegment<byte> buffer)
+        {
+            int processLength = 0;
+
+            while (true)
+            {
+                // 최소 헤더는 파싱할 수 있는지 확인
+                if (buffer.Count < HeaderSize)
+                    break;
+
+                // 패킷이 완전체로 도착했는지 확인
+                ushort dataSize = BitConverter.ToUInt16(buffer.Array, buffer.Offset);
+                if (buffer.Count < dataSize)
+                    break;
+
+                // 정상 패킷일경우 
+                OnReceivePacket(new ArraySegment<byte>(buffer.Array, buffer.Offset, dataSize));
+
+                processLength += dataSize;
+                buffer = new ArraySegment<byte>(buffer.Array, buffer.Offset + dataSize, buffer.Count - dataSize);
+            }
+
+            return processLength;
+        }
+
+        public abstract void OnReceivePacket(ArraySegment<byte> buffer);
+    }
+
     public abstract class Session
     {
         private Socket _socket;

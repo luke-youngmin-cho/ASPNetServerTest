@@ -7,6 +7,12 @@ using System.Threading;
 using ServerCore;
 namespace DummyClient
 {
+    class Packet
+    {
+        public ushort Size;
+        public ushort Id;
+    }
+
     class GameSession : Session
     {
         public override void OnConnected(EndPoint endPoint)
@@ -16,7 +22,17 @@ namespace DummyClient
             // 송신
             for (int i = 0; i < 5; i++)
             {
-                byte[] sendBuffer = Encoding.UTF8.GetBytes($"Hello World {i}");
+                Console.WriteLine($"OnConnected : {endPoint}");
+
+                Packet packet = new Packet() { Size = 4, Id = 7 };
+
+                ArraySegment<byte> openSegment = SendBufferHelper.Open(4096);
+                byte[] buffer = BitConverter.GetBytes(packet.Size);
+                byte[] buffer2 = BitConverter.GetBytes(packet.Id);
+                Array.Copy(buffer, 0, openSegment.Array, openSegment.Offset, buffer.Length);
+                Array.Copy(buffer2, 0, openSegment.Array, openSegment.Offset + buffer.Length, buffer2.Length);
+                ArraySegment<byte> sendBuffer = SendBufferHelper.Close(packet.Size);
+
                 Send(sendBuffer);
             }
         }
