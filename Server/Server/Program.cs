@@ -8,13 +8,28 @@ using ServerCore;
 
 namespace Server
 {
+    class Knight
+    {
+        public int Hp;
+        public int Attack;
+    }
+
     class GameSession : Session
     {
         public override void OnConnected(EndPoint endPoint)
         {
             Console.WriteLine($"OnConnected : {endPoint}");
 
-            byte[] sendBuffer = Encoding.UTF8.GetBytes("Welcome to server!");
+            Knight knight = new Knight() { Hp = 100, Attack = 10 };
+
+            ArraySegment<byte> openSegment = SendBufferHelper.Open(4096);
+            
+            byte[] buffer = BitConverter.GetBytes(knight.Hp);
+            byte[] buffer2 = BitConverter.GetBytes(knight.Attack);
+            Array.Copy(buffer, 0, openSegment.Array, openSegment.Offset, buffer.Length);
+            Array.Copy(buffer2, 0, openSegment.Array, openSegment.Offset + buffer.Length, buffer2.Length);
+            ArraySegment<byte> sendBuffer = SendBufferHelper.Close(buffer.Length + buffer2.Length);
+            
             Send(sendBuffer);
 
             Thread.Sleep(1000);
@@ -27,12 +42,11 @@ namespace Server
             Console.WriteLine($"OnDisconnected : {endPoint}");
         }
 
-        public override void OnReceive(ArraySegment<byte> buffer)
+        public override int OnReceive(ArraySegment<byte> buffer)
         {
             string receiveData = Encoding.UTF8.GetString(buffer.Array, buffer.Offset, buffer.Count);
             Console.WriteLine($"[From Client] {receiveData}");
-
-
+            return buffer.Count;
         }
 
         public override void OnSend(int numOfBytes)

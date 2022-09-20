@@ -11,8 +11,11 @@ namespace ServerCore
     {
         private Socket _socket;
         private int _disconnected = 0;
+
+        ReceiveBuffer _receiveBuffer = new ReceiveBuffer(1024);
+
         object _lock = new object();
-        Queue<byte[]> _sendQueue = new Queue<byte[]>();
+        Queue<ArraySegment<byte>> _sendQueue = new Queue<ArraySegment<byte>>();
         bool _pending = false;
         List<ArraySegment<byte>> _pendingList = new List<ArraySegment<byte>>();
         SocketAsyncEventArgs _sendArgs = new SocketAsyncEventArgs();
@@ -21,7 +24,7 @@ namespace ServerCore
         public abstract void OnConnected(EndPoint endPoint);
 
         public abstract void OnDisconnected(EndPoint endPoint);
-        public abstract void OnReceive(ArraySegment<byte> buffer);
+        public abstract int OnReceive(ArraySegment<byte> buffer);
 
         public abstract void OnSend(int numOfBytes);
 
@@ -30,13 +33,11 @@ namespace ServerCore
             _socket = socket;
             _receiveArgs = new SocketAsyncEventArgs();
             _receiveArgs.Completed += new EventHandler<SocketAsyncEventArgs>(OnReceiveCompleted);            
-            _receiveArgs.SetBuffer(new byte[1024], 0, 1024);
-
             _sendArgs.Completed += new EventHandler<SocketAsyncEventArgs>(OnSendCompleted);
             RegisterReceive();
         }
 
-        public void Send(byte[] sendBuffer)
+        public void Send(ArraySegment<byte> sendBuffer)
         {
             lock (_lock)
             {
@@ -63,8 +64,8 @@ namespace ServerCore
             _pendingList.Clear();
             while (_sendQueue.Count > 0)
             {
-                byte[] buffer = _sendQueue.Dequeue();
-                _pendingList.Add(new ArraySegment<byte>(buffer, 0, buffer.Length)); // C# 에선 일반적으로 포인터를 사용할 수 없기때문에 버퍼의일부 범위를 넣기위해서 범위를 지정한 배열의 일부를 생성해서 넣어줌
+                ArraySegment<byte> buffer = _sendQueue.Dequeue();
+                _pendingList.Add(new ArraySegment<byte>(buffer.Array, buffer.Offset, buffer.Count)); // C# 에선 일반적으로 포인터를 사용할 수 없기때문에 버퍼의일부 범위를 넣기위해서 범위를 지정한 배열의 일부를 생성해서 넣어줌
             }
 
             _sendArgs.BufferList = _pendingList;
@@ -111,6 +112,10 @@ namespace ServerCore
 
         void RegisterReceive()
         {
+            _receiveBuffer.Clear();
+            ArraySegment<byte> segment = _receiveBuffer.WriteSegment;
+            _receiveArgs.SetBuffer(segment.Array, segment.Offset, segment.Count);
+
             bool pending = _socket.ReceiveAsync(_receiveArgs);
             if (pending == false)
                 OnReceiveCompleted(null, _receiveArgs);
@@ -123,6 +128,27 @@ namespace ServerCore
             {
                 try
                 {
+                    // Write 커서 이동
+                    if (_receiveBuffer.OnWrite(args.BytesTransferred) == false)
+                    {
+                        Disconnect();
+                        return;
+                    }
+
+                    int processLength = OnReceive(_receiveBuffer.ReadSegment);
+                    if (processLength < 0 || _receiveBuffer.DataSize < processLength)
+                    {
+                        Disconnect();
+                        return;
+                    }
+
+                    // Read 커서 이동
+                    if (_receiveBuffer.OnRead(processLength) == false)
+                    {
+                        Disconnect();
+                        return;
+                    }
+
                     OnReceive(new ArraySegment<byte>(args.Buffer, args.Offset, args.BytesTransferred));
                     RegisterReceive();
                 }
